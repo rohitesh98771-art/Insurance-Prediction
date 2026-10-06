@@ -36,6 +36,7 @@ except ImportError:
 CURRENCY = "$"
 MODEL_FILE = "insurance_model.joblib"
 DASHBOARD_FILE = "insurance_dashboard.png"
+PREDICTION_FILE = "insurance_prediction.png"
 RANDOM_STATE = 42
 
 BLUE, GREEN, ORANGE, GREY = "#3b82f6", "#10b981", "#f59e0b", "#9ca3af"
@@ -258,9 +259,38 @@ def train(df, target):
 # Charts
 # ----------------------------------------------------------------------
 
+def open_image(path):
+    # Open the saved PNG with the computer's default image viewer
+    import subprocess
+
+    full = os.path.abspath(path)
+
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(full)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", full])
+        else:
+            subprocess.Popen(["xdg-open", full])
+    except Exception:
+        print(f"  Open this file manually to see the chart: {full}")
+
+
+def display_figure(path):
+    # Show a chart window; if this Python cannot open windows, open the PNG instead
+    backend = plt.get_backend().lower()
+
+    if backend in ("agg", "pdf", "svg", "ps", "cairo", "template"):
+        print(f"  No chart window available here, opening {path} instead.")
+        plt.close("all")
+        open_image(path)
+    else:
+        plt.show()
+
+
 def show_dashboard(report):
     if not HAS_PLOT:
-        print("  (Install matplotlib to see charts: pip install matplotlib)")
+        print("  Charts skipped: matplotlib is not installed (pip install matplotlib).")
         return
 
     target = report["target"]
@@ -314,7 +344,7 @@ def show_dashboard(report):
     plt.tight_layout()
     plt.savefig(DASHBOARD_FILE, dpi=130)
     print(f"  Charts saved as {DASHBOARD_FILE}. Close the chart window to continue.")
-    plt.show()
+    display_figure(DASHBOARD_FILE)
 
 
 def show_prediction_chart(pred, low, high, avg, target):
@@ -333,7 +363,8 @@ def show_prediction_chart(pred, low, high, avg, target):
         plt.text(i, v, money(v), ha="center", va="bottom")
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig(PREDICTION_FILE, dpi=130)
+    display_figure(PREDICTION_FILE)
 
 
 # ----------------------------------------------------------------------
@@ -419,13 +450,13 @@ def train_from_csv():
 
     # Save the trained model so it can be reused next time
     try:
-        joblib.dump({"pipe": pipe, "meta": meta}, MODEL_FILE)
+        joblib.dump({"pipe": pipe, "meta": meta, "report": report}, MODEL_FILE)
         print(f"  Model saved to {MODEL_FILE}")
     except Exception:
         pass
 
     show_dashboard(report)
-    return pipe, meta
+    return pipe, meta, report
 
 
 def load_or_train():
@@ -438,7 +469,7 @@ def load_or_train():
         if ans in ("y", "yes"):
             try:
                 saved = joblib.load(MODEL_FILE)
-                return saved["pipe"], saved["meta"]
+                return saved["pipe"], saved["meta"], saved.get("report")
             except Exception as e:
                 print(f"  Could not load saved model ({e}). Training a new one.")
 
@@ -451,11 +482,17 @@ def main():
     print("   (estimates only - not an official quote)")
     print("=" * 50)
 
-    pipe, meta = load_or_train()
+    if HAS_PLOT:
+        print(f"  Charts: ON (backend: {plt.get_backend()})")
+    else:
+        print("  Charts: OFF - matplotlib is not installed.")
+        print("  Run  pip install matplotlib  and start the program again.")
+
+    pipe, meta, report = load_or_train()
     history = []
 
     while True:
-        print("\nMenu:  1) New prediction   2) Show history   3) Load a different CSV   0) Exit")
+        print("\nMenu:  1) New prediction   2) Show history   3) Load a different CSV   4) Show charts   0) Exit")
         choice = input("Choose: ").strip()
 
         if choice == "1":
@@ -470,8 +507,14 @@ def main():
                 print(f"  {i}. {money(pred)}  <-  {details}")
 
         elif choice == "3":
-            pipe, meta = train_from_csv()
+            pipe, meta, report = train_from_csv()
             history.clear()
+
+        elif choice == "4":
+            if report:
+                show_dashboard(report)
+            else:
+                print("  No chart data in the saved model. Choose 3 and load the CSV again.")
 
         elif choice == "0":
             print("Goodbye!")
